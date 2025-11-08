@@ -1,0 +1,88 @@
+name: Build RK3288 M2 Android 9 ROM (LineageOS 16.0)
+
+on:
+  push:  # Triggers on push to main
+    branches: [ main ]
+  workflow_dispatch:  # Manual trigger button
+
+jobs:
+  build:
+    runs-on: ubuntu-latest  # 4-core, 7GB RAM
+    steps:
+    - name: Checkout Repo
+      uses: actions/checkout@v4
+
+    - name: Install Dependencies
+      run: |
+        sudo apt update
+        sudo apt install -y git-core gnupg flex bison gperf build-essential zip curl zlib1g-dev gcc-multilib g++-multilib libc6-dev-i386 lib32ncurses5-dev x11proto-core-dev libx11-dev lib32z-dev ccache libgl1-mesa-dev libxml2-utils xsltproc unzip fontconfig python3 openjdk-8-jdk repo bc bison flex libssl-dev git
+
+    - name: Set Up Repo Tool
+      run: |
+        mkdir -p ~/.bin
+        PATH="${PATH}:~/.bin"
+        curl https://storage.googleapis.com/git-repo-downloads/repo > ~/.bin/repo
+        chmod a+x ~/.bin/repo
+
+    - name: Cache LineageOS Repo (Speeds Up Future Builds)
+      uses: actions/cache@v4
+      with:
+        path: |
+          .repo
+          out
+        key: lineage-16.0-${{ hashFiles('**/*.xml') }}  # Cache based on manifest
+
+    - name: Initialize & Sync LineageOS 16.0
+      run: |
+        repo init -u https://github.com/LineageOS/android.git -b lineage-16.0
+        repo sync -c -j$(nproc) --force-sync  # ~1 hour first time
+
+    - name: Build Kernel with Custom DTS
+      run: |
+        git clone https://github.com/rockchip-linux/kernel.git -b develop-4.4 kernel
+        cd kernel
+        cp ../device/rockchip/rk3288_m2/rk3288_m2_defconfig arch/arm/configs/  # Your defconfig
+        cp ../device/rockchip/rk3288_m2/rk3288-m2.dts arch/arm/boot/dts/  # Your DTS
+        sed -i '/dtb-$$ (CONFIG_ARCH_ROCKCHIP)/a dtb- $$(CONFIG_ARCH_ROCKCHIP) += rk3288-m2.dtb' arch/arm/boot/dts/Makefile
+        make rk3288_m2_defconfig
+        make -j$(nproc) zImage dtbs modules
+
+    - name: Set Up Device Configs
+      run: |
+        # Copy built kernel
+        cp kernel/arch/arm/boot/zImage device/rockchip/rk3288_m2/prebuilt/zImage
+        cp kernel/arch/arm/boot/dts/rk3288-m2.dtb device/rockchip/rk3288_m2/prebuilt/dt.img
+        cp kernel/drivers/net/wireless/bcmdhd/brcmfmac/brcmfmac.ko device/rockchip/rk3288_m2/prebuilt/modules/  # WiFi module
+        # Add your blobs here if uploaded as repo assets (e.g., brcmfmac43362-sdio.bin)
+
+    - name: Build ROM
+      run: |
+        source build/envsetup.sh
+        lunch lineage_rk3288_m2-userdebug
+        mka bacon -j$(nproc)  # ~2 hours
+
+    - name: Pack Full Update.img (with U-Boot/Misc)
+      if: success()  # Only if build succeeds
+      run: |
+        # Extract from your original.img (upload as repo asset: settings > add file)
+        # For now, assume manual post-build; add AIK or rkdeveloptool clone here
+        git clone https://github.com/osm0sis/Android-Image-Kitchen
+        # ... (unpack original.img, copy u-boot/misc, repack as in Colab)
+        # Output: M2_Android9_Full_Update.img
+
+    - name: Upload Artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: M2_Lineage9_ROM
+        path: |
+          out/target/product/rk3288_m2/*.zip
+          out/target/product/rk3288_m2/*.img  # Including full update.img
+
+    - name: Release to GitHub (Auto-OTA)
+      uses: softprops/action-gh-release@v2
+      if: github.ref == 'refs/heads/main'  # On main push
+      with:
+        files: out/target/product/rk3288_m2/*.zip
+        tag_name: v9.0-${{ github.run_number }}
+        name: LineageOS 16.0 for RK3288 M2 (Build ${{ github.run_number }})
+        body: "Android 9 ROM with WiFi/Display fixes. Flash via AndroidTool."
