@@ -1,4 +1,4 @@
-name: Build RK3288 M2 Android 9 ROM (LineageOS 16.0)
+name: Build RK3288 M2 Android 9 ROM
 
 on:
   push:
@@ -7,84 +7,101 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04  # Critical: More disk headroom + legacy i386 packages
+    timeout-minutes: 360
     steps:
+
     - name: Checkout Repo
       uses: actions/checkout@v4
 
-    - name: Install Dependencies (Ubuntu 24.04 Full Fix)
+    - name: Free Disk Space (Clean Runner)
+      run: |
+        sudo rm -rf /usr/share/dotnet
+        sudo rm -rf /opt/ghc
+        sudo rm -rf /usr/local/lib/android
+        sudo rm -rf /usr/lib/jvm/*
+        df -h
+
+    - name: Install Dependencies (Ubuntu 22.04 Native)
       run: |
         sudo apt update
-        # Enable i386 multiarch for 32-bit libs
-        sudo dpkg --add-architecture i386
-        sudo apt update
-        # Add focal-security repo for legacy libncurses5:i386 (safe backport)
-        echo "deb http://security.ubuntu.com/ubuntu focal-security main universe" | sudo tee /etc/apt/sources.list.d/focal-security.list
-        sudo apt update
-        # Install deps (updated for 24.04: ncurses6 + backport5, bz2 runtime, etc.)
         sudo apt install -y \
-          git-core gnupg flex bison gperf build-essential zip curl zlib1g-dev \
-          gcc-multilib g++-multilib libc6-dev-i386 \
-          libncurses6:i386 libncurses5:i386 lib32ncurses-dev lib32z1-dev \
-          libbz2-1.0:i386 \
-          x11proto-core-dev libx11-dev:i386 libgl1-mesa-dev \
-          libxml2-utils xsltproc unzip fontconfig python3 openjdk-8-jdk repo bc bison flex libssl-dev
+          git repo python3 openjdk-8-jdk bc bison build-essential ccache curl flex g++-multilib \
+          gcc-multilib git gnupg gperf imagemagick lib32ncurses5-dev lib32readline-dev \
+          lib32z1-dev liblz4-tool libncurses5-dev libsdl1.2-dev libssl-dev libxml2 \
+          libxml2-utils lzop pngcrush schedtool squashfs-tools xsltproc zip zlib1g-dev \
+          libbz2-dev libncurses5:i386 libbz2-1.0:i386
 
     - name: Set Up Repo Tool
       run: |
         mkdir -p ~/.bin
-        PATH="${PATH}:~/.bin"
         curl https://storage.googleapis.com/git-repo-downloads/repo > ~/.bin/repo
         chmod a+x ~/.bin/repo
+        export PATH="$PATH:~/.bin"
 
-    - name: Cache LineageOS Repo
+    - name: Cache Repo Projects (Shallow Sync)
+      id: cache-repo
       uses: actions/cache@v4
       with:
-        path: |
-          .repo
-          out
-        key: lineage-16.0-${{ hashFiles('**/*.xml') }}
+        path: .repo/projects/**
+        key: repo-projects-${{ hashFiles('device/**', 'kernel/**') }}
+        restore-keys: repo-projects-
 
-    - name: Initialize & Sync LineageOS 16.0
+    - name: Initialize & Shallow Sync LineageOS 16.0
       run: |
-        repo init -u https://github.com/LineageOS/android.git -b lineage-16.0
-        repo sync -c -j$(nproc) --force-sync
+        repo init -u https://github.com/LineageOS/android.git -b lineage-16.0 --depth 1
+        repo sync -c -j4 --no-clone-bundle --optimized-fetch --prune
+        # Only sync what we need
+        mkdir -p .repo/local_manifests
+        cat << 'EOF' > .repo/local_manifests/roomservice.xml
+        <?xml version="1.0" encoding="UTF-8"?>
+        <manifest>
+          <remove-project name="LineageOS/android_packages_apps_Trebuchet" />
+          <remove-project name="LineageOS/android_packages_apps_Launcher3" />
+        </manifest>
+        EOF
+        repo sync -j4
 
-    - name: Build Kernel with Custom DTS
+    - name: Build Kernel
       run: |
-        git clone https://github.com/rockchip-linux/kernel.git -b develop-4.4 kernel
+        git clone --depth 1 https://github.com/rockchip-linux/kernel.git -b develop-4.4 kernel
         cd kernel
         cp ../device/rockchip/rk3288_m2/rk3288_m2_defconfig arch/arm/configs/
         cp ../device/rockchip/rk3288_m2/rk3288-m2.dts arch/arm/boot/dts/
         sed -i '/dtb-$(CONFIG_ARCH_ROCKCHIP)/a dtb-$(CONFIG_ARCH_ROCKCHIP) += rk3288-m2.dtb' arch/arm/boot/dts/Makefile
         make rk3288_m2_defconfig
-        make -j$(nproc) zImage dtbs modules
+        make -j4 zImage dtbs modules
 
-    - name: Set Up Device Configs
+    - name: Copy Kernel Outputs
       run: |
-        cp kernel/arch/arm/boot/zImage device/rockchip/rk3288_m2/prebuilt/zImage
+        mkdir -p device/rockchip/rk3288_m2/prebuilt
+        cp kernel/arch/arm/boot/zImage device/rockchip/rk3288_m2/prebuilt/
         cp kernel/arch/arm/boot/dts/rk3288-m2.dtb device/rockchip/rk3288_m2/prebuilt/dt.img
-        cp kernel/drivers/net/wireless/bcmdhd/brcmfmac/brcmfmac.ko device/rockchip/rk3288_m2/prebuilt/modules/ || true
+        mkdir -p device/rockchip/rk3288_m2/prebuilt/modules
+        find kernel -name "brcmfmac.ko" -exec cp {} device/rockchip/rk3288_m2/prebuilt/modules/ \; || true
 
-    - name: Build ROM
+    - name: Build ROM (Minimal)
       run: |
         source build/envsetup.sh
         lunch lineage_rk3288_m2-userdebug
-        mka bacon -j$(nproc)
+        export USE_CCACHE=1
+        export CCACHE_EXEC=/usr/bin/ccache
+        export CCACHE_MAXSIZE=50G
+        ccache -M 50G
+        mka bacon -j4
 
-    - name: Upload Artifacts
+    - name: Upload ROM Artifact
       uses: actions/upload-artifact@v4
       with:
         name: M2_Lineage9_ROM
         path: |
-          out/target/product/rk3288_m2/*.zip
-          out/target/product/rk3288_m2/*.img
+          out/target/product/rk3288_m2/lineage-*.zip
+          out/target/product/rk3288_m2/boot.img
+          out/target/product/rk3288_m2/system.img
+        retention-days: 7
 
-    - name: Release to GitHub
-      uses: softprops/action-gh-release@v2
-      if: github.ref == 'refs/heads/main'
-      with:
-        files: out/target/product/rk3288_m2/*.zip
-        tag_name: v9.0-${{ github.run_number }}
-        name: LineageOS 16.0 for RK3288 M2 (Build ${{ github.run_number }})
-        body: "Android 9 ROM with WiFi/Display fixes. Flash via AndroidTool."
+    - name: Cleanup (Free Space)
+      if: always()
+      run: |
+        sudo rm -rf kernel .repo out
+        df -h
