@@ -1,0 +1,7 @@
+# mount point   fstype   device         backup
+/system         ext4     /dev/block/mtd/by-name/system   auto
+/boot           emmc     /dev/block/mtd/by-name/boot     auto
+/cache          ext4     /dev/block/mtd/by-name/cache    auto
+/data           ext4     /dev/block/mtd/by-name/userdata  auto length=-16384
+/misc           emmc     /dev/block/mtd/by-name/misc     auto
+/recovery       emmc     /dev/block/mtd/by-name/recovery auto
