@@ -1,0 +1,1 @@
+add_lunch_combo lineage_rk3288_m2-userdebug
