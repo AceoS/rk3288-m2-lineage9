@@ -1,0 +1,208 @@
+/dts-v1/;
+
+/ {
+    model = "Rockchip RK3288 M2 Custom Board";
+    compatible = "rockchip,rk3288-m2", "rockchip,rk3288";
+
+    chosen {
+        bootargs = "console=ttyFIQ0,1500000n8 androidboot.hardware=rk30board androidboot.console=ttyFIQ0 init=/init initrd=0x62000000,0x00800000 loglevel=8 earlyprintk";
+        stdout-path = "serial2:1500000n8";
+    };
+
+    memory@60000000 {
+        device_type = "memory";
+        reg = <0x60000000 0x40000000>;  /* 1GB RAM */
+    };
+
+    aliases {
+        serial0 = &uart0;
+        serial1 = &uart1;
+        serial2 = &uart2;
+        mmc0 = &sdmmc;
+        mmc1 = &emmc;
+        mmc2 = &sdio0;
+    };
+
+    /* WiFi: Broadcom AP6330 (SDIO) */
+    wifi_pwrseq: wifi-pwrseq {
+        compatible = "mmc-pwrseq-simple";
+        reset-gpios = <&gpio7 14 GPIO_ACTIVE_LOW>;  /* WIFI_EN */
+        clocks = <&clk_wifi>;
+        clock-names = "ext_clock";
+        status = "okay";
+    };
+
+    /* SDIO0 - WiFi */
+    &sdio0 {
+        status = "okay";
+        bus-width = <4>;
+        cap-sd-highspeed;
+        cap-mmc-highspeed;
+        disable-wp;
+        pinctrl-names = "default";
+        pinctrl-0 = <&sdio0_clk &sdio0_cmd &sdio0_bus4>;
+        vmmc-supply = <&vcc_sdio>;
+        non-removable;
+        keep-power-in-suspend;
+        enable-sdio-wakeup;
+        pwrseq = <&wifi_pwrseq>;
+    };
+
+    /* HDMI */
+    &hdmi {
+        status = "okay";
+        pinctrl-names = "default";
+        pinctrl-0 = <&hdmi_ctl>;
+    };
+
+    /* VOP (Display) - LCDC0 */
+    lcdc@ff930000 {
+        compatible = "rockchip,rk3288-lcdc";
+        reg = <0xff930000 0x4000>;
+        interrupts = <0 86 4>;
+        clocks = <&cru ACLK_VOP0>, <&cru HCLK_VOP0>, <&cru DCLK_VOP0>;
+        clock-names = "aclk_vop", "hclk_vop", "dclk_vop";
+        power-domains = <&power RK3288_PD_VIO>;
+        rockchip,grf = <&grf>;
+        status = "okay";
+
+        ports {
+            #address-cells = <1>;
+            #size-cells = <0>;
+
+            port@0 {
+                reg = <0>;
+                lcdc0_out_hdmi: endpoint {
+                    remote-endpoint = <&hdmi_in_vop>;
+                };
+            };
+        };
+
+        display-timings {
+            native-mode = <&timing0>;
+
+            timing0: 1920x1080 {
+                clock-frequency = <148500000>;
+                hactive = <1920>;
+                hfront-porch = <88>;
+                hsync-len = <44>;
+                hback-porch = <148>;
+                vactive = <1080>;
+                vfront-porch = <4>;
+                vsync-len = <5>;
+                vback-porch = <36>;
+                hsync-active = <0>;
+                vsync-active = <0>;
+                de-active = <0>;
+                pixelclk-active = <0>;
+            };
+        };
+    };
+
+    /* LVDS (Optional - Enable if panel used) */
+    lvds@ff96c000 {
+        compatible = "rockchip,rk3288-lvds";
+        reg = <0xff96c000 0x4000>;
+        rockchip,grf = <&grf>;
+        status = "disabled";  /* Change to "okay" if LVDS panel */
+        pinctrl-names = "default";
+        pinctrl-0 = <&lvds_ctl>;
+    };
+
+    /* GPIO */
+    gpio7: gpio@ff790000 {
+        compatible = "rockchip,gpio-bank";
+        reg = <0xff790000 0x100>;
+        interrupts = <0 79 4>;
+        clocks = <&cru PCLK_GPIO7>;
+        gpio-controller;
+        #gpio-cells = <2>;
+        interrupt-controller;
+        #interrupt-cells = <2>;
+    };
+
+    /* Clock for WiFi */
+    clk_wifi: clock-wifi {
+        compatible = "fixed-clock";
+        clock-frequency = <26000000>;
+        #clock-cells = <0>;
+    };
+
+    /* UART2 (Debug) */
+    uart2: serial@ff690000 {
+        compatible = "rockchip,rk3288-uart", "snps,dw-apb-uart";
+        reg = <0xff690000 0x100>;
+        interrupts = <0 59 4>;
+        clocks = <&cru SCLK_UART2>, <&cru PCLK_UART2>;
+        clock-names = "baudclk", "apb_pclk";
+        pinctrl-names = "default";
+        pinctrl-0 = <&uart2_xfer &uart2_cts &uart2_rts>;
+        status = "okay";
+    };
+
+    /* Power Supplies */
+    vcc_sdio: vcc-sdio {
+        compatible = "regulator-fixed";
+        regulator-name = "vcc_sdio";
+        regulator-min-microvolt = <3300000>;
+        regulator-max-microvolt = <3300000>;
+        gpio = <&gpio7 15 GPIO_ACTIVE_HIGH>;
+        enable-active-high;
+        startup-delay-us = <2000>;
+        vin-supply = <&vcc33_sys>;
+    };
+
+    /* GRF (General Register File) */
+    grf: syscon@ff770000 {
+        compatible = "rockchip,rk3288-grf", "syscon";
+        reg = <0xff770000 0x1000>;
+    };
+
+    /* Pin Control */
+    pinctrl: pinctrl@ff720000 {
+        compatible = "rockchip,rk3288-pinctrl";
+        rockchip,grf = <&grf>;
+
+        sdio0 {
+            sdio0_clk: sdio0-clk {
+                rockchip,pins = <2 12 RK_FUNC_1 &pcfg_pull_none>;
+            };
+            sdio0_cmd: sdio0-cmd {
+                rockchip,pins = <2 13 RK_FUNC_1 &pcfg_pull_up>;
+            };
+            sdio0_bus4: sdio0-bus4 {
+                rockchip,pins =
+                    <2 14 RK_FUNC_1 &pcfg_pull_up>,
+                    <2 15 RK_FUNC_1 &pcfg_pull_up>,
+                    <2 16 RK_FUNC_1 &pcfg_pull_up>,
+                    <2 17 RK_FUNC_1 &pcfg_pull_up>;
+            };
+        };
+
+        hdmi {
+            hdmi_ctl: hdmi-ctl {
+                rockchip,pins = <7 25 RK_FUNC_1 &pcfg_pull_none>;
+            };
+        };
+
+        uart2 {
+            uart2_xfer: uart2-xfer {
+                rockchip,pins =
+                    <1 15 RK_FUNC_1 &pcfg_pull_up>,
+                    <1 16 RK_FUNC_1 &pcfg_pull_none>;
+            };
+            uart2_cts: uart2-cts {
+                rockchip,pins = <1 17 RK_FUNC_1 &pcfg_pull_none>;
+            };
+            uart2_rts: uart2-rts {
+                rockchip,pins = <1 18 RK_FUNC_1 &pcfg_pull_none>;
+            };
+        };
+
+        lvds {
+            lvds_ctl: lvds-ctl {
+                rockchip,pins = <7 26 RK_FUNC_1 &pcfg_pull_none>;
+            };
+        };
+    };
+};
