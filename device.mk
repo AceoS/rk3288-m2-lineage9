@@ -1,24 +1,22 @@
-$(call inherit-product, $(SRC_TARGET_DIR)/product/languages_full.mk)
+# device.mk
 
-# The gps config appropriate for this device
-$(call inherit-product, device/common/gps/gps_us_supl.mk)
+$(call inherit-product, $(SRC_TARGET_DIR)/product/full_base.mk)
 
-$(call inherit-product-if-exists, vendor/__MANUFACTURER__/__DEVICE__/__DEVICE__-vendor.mk)
-
-DEVICE_PACKAGE_OVERLAYS += device/__MANUFACTURER__/__DEVICE__/overlay
-
-
-ifeq ($(TARGET_PREBUILT_KERNEL),)
-	LOCAL_KERNEL := device/__MANUFACTURER__/__DEVICE__/kernel
-else
-	LOCAL_KERNEL := $(TARGET_PREBUILT_KERNEL)
-endif
-
+# WiFi Firmware (from your 4.4 system.img)
 PRODUCT_COPY_FILES += \
-    $(LOCAL_KERNEL):kernel
+    device/rockchip/rk3288_m2/prebuilt/firmware/brcmfmac43362-sdio.bin:system/etc/firmware/brcmfmac43362-sdio.bin \
+    device/rockchip/rk3288_m2/prebuilt/firmware/brcmfmac43362-sdio.txt:system/etc/firmware/brcmfmac43362-sdio.txt
 
-$(call inherit-product, build/target/product/full.mk)
+# Mali GPU Libs
+PRODUCT_COPY_FILES += \
+    device/rockchip/rk3288_m2/prebuilt/lib/libMali.so:system/lib/libMali.so \
+    device/rockchip/rk3288_m2/prebuilt/lib/egl/libGLES_mali.so:system/lib/egl/libGLES_mali.so
 
-PRODUCT_BUILD_PROP_OVERRIDES += BUILD_UTC_DATE=0
-PRODUCT_NAME := full___DEVICE__
-PRODUCT_DEVICE := __DEVICE__
+# WiFi Module
+PRODUCT_PACKAGES += \
+    brcmfmac.ko
+
+# Permissions
+PRODUCT_COPY_FILES += \
+    frameworks/native/data/etc/android.hardware.wifi.xml:system/etc/permissions/android.hardware.wifi.xml \
+    frameworks/native/data/etc/android.hardware.ethernet.xml:system/etc/permissions/android.hardware.ethernet.xml
