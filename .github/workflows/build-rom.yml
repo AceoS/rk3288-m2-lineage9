@@ -22,15 +22,25 @@ jobs:
         sudo rm -rf /usr/lib/jvm/*
         df -h
 
-    - name: Install Dependencies (Ubuntu 22.04 Native)
+    - name: Install Dependencies (Ubuntu 22.04 Final Fix)
       run: |
+        # Step 1: Enable i386 architecture
+        sudo dpkg --add-architecture i386
         sudo apt update
+
+        # Step 2: Enable universe repo (for libncurses5:i386, libbz2-1.0:i386)
+        sudo add-apt-repository universe -y
+        sudo apt update
+
+        # Step 3: Install all required packages (verified in 22.04)
         sudo apt install -y \
           git repo python3 openjdk-8-jdk bc bison build-essential ccache curl flex g++-multilib \
-          gcc-multilib git gnupg gperf imagemagick lib32ncurses5-dev lib32readline-dev \
-          lib32z1-dev liblz4-tool libncurses5-dev libsdl1.2-dev libssl-dev libxml2 \
-          libxml2-utils lzop pngcrush schedtool squashfs-tools xsltproc zip zlib1g-dev \
-          libbz2-dev libncurses5:i386 libbz2-1.0:i386
+          gcc-multilib git gnupg gperf imagemagick \
+          lib32ncurses5-dev lib32readline-dev lib32z1-dev \
+          liblz4-tool libncurses5-dev libsdl1.2-dev libssl-dev libxml2 libxml2-utils \
+          lzop pngcrush schedtool squashfs-tools xsltproc zip zlib1g-dev \
+          libbz2-dev \
+          libncurses5:i386 libbz2-1.0:i386
 
     - name: Set Up Repo Tool
       run: |
